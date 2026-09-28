@@ -10,7 +10,7 @@
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col justify-center items-center p-4 font-sans select-none">
 
-  <!-- LOGIN SCREEN -->
+  <!-- LOGIN SCREEN (SCHERMATA NOME) -->
   <div id="screenLogin" class="bg-slate-800 border border-slate-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl text-center">
     <h2 class="text-2xl font-black mb-4 text-amber-400">Entra in Gioco</h2>
     <input type="text" id="playerName" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-lg text-white font-bold mb-4" placeholder="Scrivi il tuo Nome...">
@@ -28,11 +28,15 @@
   <div id="screenGame" class="hidden w-full max-w-xl flex flex-col gap-4">
     <!-- USER HEADER -->
     <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center shadow">
-      <span id="playerBadge" class="font-bold text-slate-200">Alunno</span>
-      <div class="flex items-center gap-2">
-        <button onclick="openSolveModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-extrabold px-3 py-1.5 rounded-lg text-xs shadow">💡 TENTA LA SOLUZIONE</button>
-        <span id="scoreBadge" class="bg-amber-400/20 text-amber-400 font-black px-3 py-1 rounded-lg">0 pt</span>
-      </div>
+      <span id="playerBadge" class="text-lg font-bold text-slate-200">Alunno</span>
+      <span id="scoreBadge" class="bg-amber-400/20 text-amber-400 font-black px-4 py-2 rounded-xl text-lg">0 pt</span>
+    </div>
+
+    <!-- BOTTONE SOLUZIONE FRASE (GRANDE E IN EVIDENZA) -->
+    <div class="bg-amber-500/10 border border-amber-500/40 p-2.5 rounded-xl text-center shadow">
+      <button onclick="openSolveModal()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-3 rounded-xl shadow-lg text-base tracking-wide flex items-center justify-center gap-2">
+        💡 TENTA LA SOLUZIONE DELLA FRASE (+50 PT)
+      </button>
     </div>
 
     <!-- QUESTION AREA -->
@@ -49,11 +53,11 @@
   </div>
 
   <!-- MODAL SOLUZIONE FRASE -->
-  <div id="modalSolve" class="fixed inset-0 bg-black/80 flex items-center justify-center hidden p-4">
+  <div id="modalSolve" class="fixed inset-0 bg-black/80 flex items-center justify-center hidden p-4 z-50">
     <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 max-w-md w-full text-center">
       <h3 class="text-xl font-bold mb-2 text-amber-400">Risolvi la Frase Segreta!</h3>
-      <p class="text-xs text-slate-300 mb-4">Se indovini guadagni <strong class="text-emerald-400">+50 PUNTI</strong>! Se sbagli perdi <strong class="text-red-400">10 PUNTI</strong>.</p>
-      <input type="text" id="phraseGuessInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-lg text-white font-bold mb-4 uppercase" placeholder="Scrivi la frase completa...">
+      <p class="text-xs text-slate-300 mb-4">Se indovini la frase completa guadagni <strong class="text-emerald-400">+50 PUNTI</strong>! Se sbagli perdi <strong class="text-red-400">10 PUNTI</strong>.</p>
+      <input type="text" id="phraseGuessInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-lg text-white font-bold mb-4 uppercase" placeholder="Scrivi qui la frase intera...">
       <div class="flex gap-2">
         <button onclick="submitPhraseSolution()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl shadow">INVIA SOLUZIONE</button>
         <button onclick="closeSolveModal()" class="bg-slate-700 hover:bg-slate-600 px-4 py-3 rounded-xl font-bold">ANNULLA</button>
@@ -83,6 +87,22 @@
     let currentPhrase = "";
     let guessedLetters = [];
 
+    function resetToLogin() {
+      myId = "";
+      myName = "";
+      myScore = 0;
+      hasAnswered = false;
+      isWinner = false;
+      currentQ = null;
+      currentPhrase = "";
+      guessedLetters = [];
+
+      document.getElementById('playerName').value = "";
+      document.getElementById('screenGame').classList.add('hidden');
+      document.getElementById('screenLobby').classList.add('hidden');
+      document.getElementById('screenLogin').classList.remove('hidden');
+    }
+
     function joinGame() {
       const name = document.getElementById('playerName').value.trim();
       if (!name) return alert("Inserisci il tuo nome!");
@@ -101,22 +121,30 @@
     }
 
     function listenSession() {
+      // Monitora se il giocatore viene rimosso dal database (es. quando il docente preme FERMA TUTTO)
       db.ref('players/' + myId).on('value', snap => {
+        if (!snap.exists() && myId !== "") {
+          resetToLogin();
+          return;
+        }
         if (snap.exists()) {
           myScore = snap.val().score;
           document.getElementById('scoreBadge').innerText = myScore + " pt";
         }
       });
 
+      // Monitora lo stato della sessione
       db.ref('session').on('value', snap => {
         const s = snap.val();
         if (!s) return;
 
+        // Se lo stato torna a 'lobby', forza il ritorno all'inserimento del nome
         if (s.status === 'lobby') {
-          document.getElementById('screenGame').classList.add('hidden');
-          document.getElementById('screenLobby').classList.remove('hidden');
-        } else if (s.status === 'started' || s.status === 'question_active') {
+          resetToLogin();
+          return;
+        } else if ((s.status === 'started' || s.status === 'question_active') && myId !== "") {
           document.getElementById('screenLobby').classList.add('hidden');
+          document.getElementById('screenLogin').classList.add('hidden');
           document.getElementById('screenGame').classList.remove('hidden');
         }
 
@@ -159,7 +187,7 @@
     }
 
     function submitAnswer(num) {
-      if (hasAnswered) return;
+      if (hasAnswered || !myId) return;
       hasAnswered = true;
       const isCorrect = (num === currentQ.esatta);
 
@@ -210,7 +238,7 @@
     }
 
     function pickLetter(letter) {
-      if (!isWinner || guessedLetters.includes(letter)) return;
+      if (!isWinner || guessedLetters.includes(letter) || !myId) return;
 
       guessedLetters.push(letter);
       const inPhrase = currentPhrase.includes(letter);
@@ -232,7 +260,7 @@
 
     function submitPhraseSolution() {
       const guess = document.getElementById('phraseGuessInput').value.trim();
-      if (!guess) return alert("Inserisci una frase!");
+      if (!guess || !myId) return alert("Inserisci una frase!");
 
       db.ref('solutionAttempts').push({
         playerId: myId,
