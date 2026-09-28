@@ -29,7 +29,10 @@
     <!-- USER HEADER -->
     <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center shadow">
       <span id="playerBadge" class="font-bold text-slate-200">Alunno</span>
-      <span id="scoreBadge" class="bg-amber-400/20 text-amber-400 font-black px-3 py-1 rounded-lg">0 pt</span>
+      <div class="flex items-center gap-2">
+        <button onclick="openSolveModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-extrabold px-3 py-1.5 rounded-lg text-xs shadow">💡 TENTA LA SOLUZIONE</button>
+        <span id="scoreBadge" class="bg-amber-400/20 text-amber-400 font-black px-3 py-1 rounded-lg">0 pt</span>
+      </div>
     </div>
 
     <!-- QUESTION AREA -->
@@ -42,6 +45,19 @@
     <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow">
       <p id="kbStatus" class="text-xs font-bold text-slate-400 mb-2 text-center">Tastiera Bloccata</p>
       <div id="keyboard" class="flex flex-wrap gap-1.5 justify-center"></div>
+    </div>
+  </div>
+
+  <!-- MODAL SOLUZIONE FRASE -->
+  <div id="modalSolve" class="fixed inset-0 bg-black/80 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 max-w-md w-full text-center">
+      <h3 class="text-xl font-bold mb-2 text-amber-400">Risolvi la Frase Segreta!</h3>
+      <p class="text-xs text-slate-300 mb-4">Se indovini guadagni <strong class="text-emerald-400">+50 PUNTI</strong>! Se sbagli perdi <strong class="text-red-400">10 PUNTI</strong>.</p>
+      <input type="text" id="phraseGuessInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-lg text-white font-bold mb-4 uppercase" placeholder="Scrivi la frase completa...">
+      <div class="flex gap-2">
+        <button onclick="submitPhraseSolution()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl shadow">INVIA SOLUZIONE</button>
+        <button onclick="closeSolveModal()" class="bg-slate-700 hover:bg-slate-600 px-4 py-3 rounded-xl font-bold">ANNULLA</button>
+      </div>
     </div>
   </div>
 
@@ -147,28 +163,23 @@
       hasAnswered = true;
       const isCorrect = (num === currentQ.esatta);
 
-      // Disabilita bottoni
       for(let i=1; i<=4; i++) {
         const b = document.getElementById('btnOpt'+i);
         if(b) b.disabled = true;
       }
 
-      // Registra risposta con timestamp per stabilire il più veloce
-      const timeMs = Date.now();
       db.ref('answers/' + myId).set({
         name: myName,
         correct: isCorrect,
-        time: timeMs
+        time: Date.now()
       });
 
-      // Calcola punti standard
       if (!isCorrect) {
         db.ref('players/' + myId + '/score').set(myScore - 3);
       } else {
         db.ref('players/' + myId + '/score').set(myScore + 5);
       }
 
-      // Controlla se si è i primi in assoluto a rispondere correttamente
       db.ref('answers').once('value', snap => {
         const answers = snap.val() || {};
         const corrects = Object.keys(answers)
@@ -177,9 +188,7 @@
           .sort((a,b) => a.time - b.time);
 
         if (corrects.length > 0 && corrects[0].id === myId) {
-          db.ref('session').update({
-            fastestWinner: { id: myId, name: myName }
-          });
+          db.ref('session').update({ fastestWinner: { id: myId, name: myName } });
         }
       });
     }
@@ -216,6 +225,25 @@
         guessedLetters: guessedLetters,
         fastestWinner: null
       });
+    }
+
+    // GESTIONE MODALE SOLUZIONE
+    function openSolveModal() { document.getElementById('modalSolve').classList.remove('hidden'); }
+    function closeSolveModal() { document.getElementById('modalSolve').classList.add('hidden'); }
+
+    function submitPhraseSolution() {
+      const guess = document.getElementById('phraseGuessInput').value.trim();
+      if (!guess) return alert("Inserisci una frase!");
+
+      db.ref('solutionAttempts').push({
+        playerId: myId,
+        name: myName,
+        guess: guess,
+        time: Date.now()
+      });
+
+      document.getElementById('phraseGuessInput').value = "";
+      closeSolveModal();
     }
   </script>
 </body>
