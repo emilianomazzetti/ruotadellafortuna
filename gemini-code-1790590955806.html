@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ruota della Fortuna - PLAYER</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-center items-center p-4 font-sans select-none">
+
+  <!-- LOGIN SCREEN -->
+  <div id="screenLogin" class="bg-slate-800 border border-slate-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl text-center">
+    <h2 class="text-2xl font-black mb-4 text-amber-400">Entra in Gioco</h2>
+    <input type="text" id="playerName" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-lg text-white font-bold mb-4" placeholder="Scrivi il tuo Nome...">
+    <button onclick="joinGame()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg text-lg">ENTRA</button>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div id="screenLobby" class="hidden text-center max-w-md">
+    <div class="animate-bounce text-5xl mb-4">⏳</div>
+    <h2 id="lobbyName" class="text-2xl font-bold text-amber-400 mb-2"></h2>
+    <p class="text-slate-300">ASPETTA CHE IL DOCENTE AVVII IL GIOCO...</p>
+  </div>
+
+  <!-- GAME INTERFACE -->
+  <div id="screenGame" class="hidden w-full max-w-xl flex flex-col gap-4">
+    <!-- USER HEADER -->
+    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center shadow">
+      <span id="playerBadge" class="font-bold text-slate-200">Alunno</span>
+      <span id="scoreBadge" class="bg-amber-400/20 text-amber-400 font-black px-3 py-1 rounded-lg">0 pt</span>
+    </div>
+
+    <!-- QUESTION AREA -->
+    <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow">
+      <h3 id="qText" class="text-lg font-bold text-slate-100 mb-4">In attesa della domanda...</h3>
+      <div id="optionsGrid" class="grid grid-cols-2 gap-3"></div>
+    </div>
+
+    <!-- ALPHABET KEYBOARD -->
+    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow">
+      <p id="kbStatus" class="text-xs font-bold text-slate-400 mb-2 text-center">Tastiera Bloccata</p>
+      <div id="keyboard" class="flex flex-wrap gap-1.5 justify-center"></div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDhhtSc2bJTAMKp_jAzd0mUxtIhGzLS6f8",
+      authDomain: "ruotadellafortuna-a3181.firebaseapp.com",
+      databaseURL: "https://ruotadellafortuna-a3181-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "ruotadellafortuna-a3181",
+      storageBucket: "ruotadellafortuna-a3181.firebasestorage.app",
+      messagingSenderId: "926918549896",
+      appId: "1:926918549896:web:b0607a89a1ff98e9f61a3d"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let myId = "";
+    let myName = "";
+    let myScore = 0;
+    let hasAnswered = false;
+    let isWinner = false;
+    let currentQ = null;
+    let currentPhrase = "";
+    let guessedLetters = [];
+
+    function joinGame() {
+      const name = document.getElementById('playerName').value.trim();
+      if (!name) return alert("Inserisci il tuo nome!");
+      
+      myName = name;
+      myId = "p_" + Math.random().toString(36).substr(2, 9);
+      
+      db.ref('players/' + myId).set({ name: myName, score: 0 });
+      
+      document.getElementById('screenLogin').classList.add('hidden');
+      document.getElementById('screenLobby').classList.remove('hidden');
+      document.getElementById('lobbyName').innerText = "Ciao " + myName + "!";
+      document.getElementById('playerBadge').innerText = myName;
+
+      listenSession();
+    }
+
+    function listenSession() {
+      db.ref('players/' + myId).on('value', snap => {
+        if (snap.exists()) {
+          myScore = snap.val().score;
+          document.getElementById('scoreBadge').innerText = myScore + " pt";
+        }
+      });
+
+      db.ref('session').on('value', snap => {
+        const s = snap.val();
+        if (!s) return;
+
+        if (s.status === 'lobby') {
+          document.getElementById('screenGame').classList.add('hidden');
+          document.getElementById('screenLobby').classList.remove('hidden');
+        } else if (s.status === 'started' || s.status === 'question_active') {
+          document.getElementById('screenLobby').classList.add('hidden');
+          document.getElementById('screenGame').classList.remove('hidden');
+        }
+
+        if (s.currentPhrase) currentPhrase = s.currentPhrase;
+        if (s.guessedLetters) guessedLetters = s.guessedLetters;
+
+        if (s.currentQuestion && s.currentQuestion !== currentQ) {
+          currentQ = s.currentQuestion;
+          hasAnswered = false;
+          isWinner = false;
+          renderQuestion(currentQ);
+        }
+
+        if (s.fastestWinner && s.fastestWinner.id === myId) {
+          isWinner = true;
+          document.getElementById('kbStatus').innerText = "✨ SEI IL PIÙ VELOCE! SCEGLI UNA LETTERA!";
+          document.getElementById('kbStatus').className = "text-xs font-bold text-amber-400 mb-2 text-center animate-pulse";
+        } else {
+          isWinner = false;
+          document.getElementById('kbStatus').innerText = "Tastiera disattivata (Attiva solo per il vincitore)";
+          document.getElementById('kbStatus').className = "text-xs font-bold text-slate-400 mb-2 text-center";
+        }
+        renderKeyboard();
+      });
+    }
+
+    function renderQuestion(q) {
+      document.getElementById('qText').innerText = q.domanda;
+      const grid = document.getElementById('optionsGrid');
+      grid.innerHTML = '';
+      
+      [q.r1, q.r2, q.r3, q.r4].forEach((opt, idx) => {
+        const num = idx + 1;
+        grid.innerHTML += `
+          <button onclick="submitAnswer(${num})" id="btnOpt${num}" class="bg-indigo-600 hover:bg-indigo-500 font-bold p-3 rounded-xl text-left shadow text-sm border border-indigo-400/30">
+            ${opt}
+          </button>
+        `;
+      });
+    }
+
+    function submitAnswer(num) {
+      if (hasAnswered) return;
+      hasAnswered = true;
+      const isCorrect = (num === currentQ.esatta);
+
+      // Disabilita bottoni
+      for(let i=1; i<=4; i++) {
+        const b = document.getElementById('btnOpt'+i);
+        if(b) b.disabled = true;
+      }
+
+      // Registra risposta con timestamp per stabilire il più veloce
+      const timeMs = Date.now();
+      db.ref('answers/' + myId).set({
+        name: myName,
+        correct: isCorrect,
+        time: timeMs
+      });
+
+      // Calcola punti standard
+      if (!isCorrect) {
+        db.ref('players/' + myId + '/score').set(myScore - 3);
+      } else {
+        db.ref('players/' + myId + '/score').set(myScore + 5);
+      }
+
+      // Controlla se si è i primi in assoluto a rispondere correttamente
+      db.ref('answers').once('value', snap => {
+        const answers = snap.val() || {};
+        const corrects = Object.keys(answers)
+          .map(k => ({ id: k, ...answers[k] }))
+          .filter(a => a.correct)
+          .sort((a,b) => a.time - b.time);
+
+        if (corrects.length > 0 && corrects[0].id === myId) {
+          db.ref('session').update({
+            fastestWinner: { id: myId, name: myName }
+          });
+        }
+      });
+    }
+
+    function renderKeyboard() {
+      const kb = document.getElementById('keyboard');
+      kb.innerHTML = '';
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+
+      alphabet.forEach(letter => {
+        const used = guessedLetters.includes(letter);
+        kb.innerHTML += `
+          <button onclick="pickLetter('${letter}')" ${(!isWinner || used) ? 'disabled' : ''} 
+            class="w-8 h-10 font-bold rounded-lg ${used ? 'bg-slate-900 text-slate-600 line-through' : isWinner ? 'bg-amber-400 text-slate-900 shadow-lg' : 'bg-slate-700 text-slate-400'}">
+            ${letter}
+          </button>
+        `;
+      });
+    }
+
+    function pickLetter(letter) {
+      if (!isWinner || guessedLetters.includes(letter)) return;
+
+      guessedLetters.push(letter);
+      const inPhrase = currentPhrase.includes(letter);
+
+      if (inPhrase) {
+        db.ref('players/' + myId + '/score').set(myScore + 10);
+      } else {
+        db.ref('players/' + myId + '/score').set(myScore - 5);
+      }
+
+      db.ref('session').update({
+        guessedLetters: guessedLetters,
+        fastestWinner: null
+      });
+    }
+  </script>
+</body>
+</html>
