@@ -121,28 +121,35 @@
     }
 
     function listenSession() {
-      // Monitora se il giocatore viene rimosso dal database (es. quando il docente preme FERMA TUTTO)
       db.ref('players/' + myId).on('value', snap => {
         if (!snap.exists() && myId !== "") {
           resetToLogin();
           return;
         }
         if (snap.exists()) {
-          myScore = snap.val().score;
+          myScore = snap.val().score || 0;
           document.getElementById('scoreBadge').innerText = myScore + " pt";
         }
       });
 
-      // Monitora lo stato della sessione
       db.ref('session').on('value', snap => {
         const s = snap.val();
         if (!s) return;
 
-        // Se lo stato torna a 'lobby', forza il ritorno all'inserimento del nome
-        if (s.status === 'lobby') {
+        // SE FERMA TUTTO -> Torna a inserimento NOME
+        if (s.status === 'stopped') {
           resetToLogin();
           return;
-        } else if ((s.status === 'started' || s.status === 'question_active') && myId !== "") {
+        } 
+        // SE NUOVA PARTITA -> Resta loggato, va in attesa
+        else if (s.status === 'waiting' && myId !== "") {
+          document.getElementById('screenGame').classList.add('hidden');
+          document.getElementById('screenLogin').classList.add('hidden');
+          document.getElementById('screenLobby').classList.remove('hidden');
+          document.getElementById('lobbyName').innerText = "Ciao " + myName + "!";
+        } 
+        // SE PARTITA AVVIATA -> Entra nel gioco
+        else if ((s.status === 'started' || s.status === 'question_active') && myId !== "") {
           document.getElementById('screenLobby').classList.add('hidden');
           document.getElementById('screenLogin').classList.add('hidden');
           document.getElementById('screenGame').classList.remove('hidden');
@@ -203,9 +210,9 @@
       });
 
       if (!isCorrect) {
-        db.ref('players/' + myId + '/score').set(myScore - 3);
+        db.ref('players/' + myId + '/score').transaction(c => (c || 0) - 3);
       } else {
-        db.ref('players/' + myId + '/score').set(myScore + 5);
+        db.ref('players/' + myId + '/score').transaction(c => (c || 0) + 5);
       }
 
       db.ref('answers').once('value', snap => {
@@ -244,9 +251,9 @@
       const inPhrase = currentPhrase.includes(letter);
 
       if (inPhrase) {
-        db.ref('players/' + myId + '/score').set(myScore + 10);
+        db.ref('players/' + myId + '/score').transaction(c => (c || 0) + 10);
       } else {
-        db.ref('players/' + myId + '/score').set(myScore - 5);
+        db.ref('players/' + myId + '/score').transaction(c => (c || 0) - 5);
       }
 
       db.ref('session').update({
