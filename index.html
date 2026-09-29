@@ -87,6 +87,13 @@
     let currentPhrase = "";
     let guessedLetters = [];
 
+    // Rimuove il giocatore se la scheda/browser viene chiusa
+    window.addEventListener('beforeunload', () => {
+      if (myId) {
+        db.ref('players/' + myId).remove();
+      }
+    });
+
     function resetToLogin() {
       myId = "";
       myName = "";
@@ -110,7 +117,10 @@
       myName = name;
       myId = "p_" + Math.random().toString(36).substr(2, 9);
       
-      db.ref('players/' + myId).set({ name: myName, score: 0 });
+      const playerRef = db.ref('players/' + myId);
+      playerRef.set({ name: myName, score: 0 });
+      // Istruzione Firebase server-side: elimina il giocatore automaticamente quando perde la connessione
+      playerRef.onDisconnect().remove();
       
       document.getElementById('screenLogin').classList.add('hidden');
       document.getElementById('screenLobby').classList.remove('hidden');
